@@ -243,7 +243,7 @@ elif st.session_state.page == 'Portfolio':
 
 # --- BOUNTIES PAGE ---
 elif st.session_state.page == 'Bounties':
-    st.markdown("<h1 style='letter-spacing: 5px;'>BOUNTY_TERMINAL</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='letter-spacing: 5px;'>BOUNTY TERMINAL</h1>", unsafe_allow_html=True)
     st.text_input("QUERY SKILLS / NODES / TRACKS")
     st.markdown("""
         <div class="bounty-box">
