@@ -1,90 +1,193 @@
-// VANTAGE MVP — FRONTEND SCAFFOLD
-// Stack: Next.js (App Router) + Tailwind + Framer Motion
-// This is an MVP platform prototype, NOT a landing page
+import streamlit as st
+import pandas as pd
+import uuid
+from datetime import datetime
 
-'use client'
+# -----------------------------
+# CONFIG
+# -----------------------------
+st.set_page_config(
+    page_title="VANTAGE // PROTOCOL",
+    page_icon="🧬",
+    layout="wide"
+)
 
-import { motion } from 'framer-motion'
+# -----------------------------
+# IN-MEMORY DATABASE (MVP)
+# -----------------------------
+if "users" not in st.session_state:
+    st.session_state.users = {
+        "alex": {"role": "student"},
+        "genisys": {"role": "company"}
+    }
 
-const bounties = [
-  {
-    id: 1,
-    title: 'Clean & Normalize Census Dataset',
-    domain: 'STEM',
-    hours: '6–8 hrs',
-    reward: '$180',
-    skills: ['Python', 'pandas', 'data validation'],
-    company: 'Local Non-Profit (Verified)'
-  },
-  {
-    id: 2,
-    title: 'SEO Architecture Audit',
-    domain: 'Growth',
-    hours: '4–6 hrs',
-    reward: '$150',
-    skills: ['SEO', 'Site Mapping', 'Analytics'],
-    company: 'Early-Stage Startup'
-  },
-  {
-    id: 3,
-    title: 'Competitor Intelligence Report',
-    domain: 'Business Intelligence',
-    hours: '8–10 hrs',
-    reward: '$220',
-    skills: ['Market Research', 'Excel', 'Strategic Analysis'],
-    company: 'SMB Retail Brand'
-  }
-]
+if "bounties" not in st.session_state:
+    st.session_state.bounties = []
 
-export default function VantageDashboard() {
-  return (
-    <div className="min-h-screen bg-[#0A0A0F] text-white px-10 py-8">
-      {/* HEADER */}
-      <header className="flex justify-between items-center mb-10">
-        <h1 className="text-2xl font-semibold tracking-wide">VANTAGE</h1>
-        <span className="text-sm opacity-60">Neural Meritocracy Interface</span>
-      </header>
+if "submissions" not in st.session_state:
+    st.session_state.submissions = []
 
-      {/* BOUNTY TERMINAL */}
-      <section>
-        <h2 className="text-lg mb-4 opacity-80">Available Micro-Bounties</h2>
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
 
-        <div className="grid grid-cols-1 gap-4">
-          {bounties.map((bounty) => (
-            <motion.div
-              key={bounty.id}
-              whileHover={{ scale: 1.01 }}
-              className="rounded-xl bg-white/5 backdrop-blur-md border border-white/10 p-6"
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-xl font-medium">{bounty.title}</h3>
-                  <p className="text-sm opacity-60 mt-1">{bounty.company}</p>
-                </div>
-                <span className="text-sm px-3 py-1 rounded-full bg-white/10">
-                  {bounty.domain}
-                </span>
-              </div>
+# -----------------------------
+# AUTH
+# -----------------------------
+def login():
+    st.sidebar.subheader("LOGIN")
+    user = st.sidebar.text_input("HANDLE")
+    if st.sidebar.button("CONNECT"):
+        if user in st.session_state.users:
+            st.session_state.current_user = user
+        else:
+            st.sidebar.error("USER NOT FOUND")
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                {bounty.skills.map((skill) => (
-                  <span
-                    key={skill}
-                    className="text-xs px-2 py-1 rounded bg-white/10"
-                  >
-                    {skill}
-                  </span>
-                ))}
-              </div>
+def logout():
+    st.session_state.current_user = None
 
-              <div className="mt-5 flex justify-between text-sm opacity-80">
-                <span>{bounty.hours}</span>
-                <span>{bounty.reward}</span>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-    </div>
-  )
-}
+# -----------------------------
+# NAV
+# -----------------------------
+if not st.session_state.current_user:
+    login()
+    st.stop()
+
+user = st.session_state.current_user
+role = st.session_state.users[user]["role"]
+
+st.sidebar.markdown(f"**USER:** `{user.upper()}`")
+st.sidebar.markdown(f"**ROLE:** `{role.upper()}`")
+if st.sidebar.button("DISCONNECT"):
+    logout()
+    st.stop()
+
+page = st.sidebar.radio(
+    "NAV",
+    ["Dashboard", "Bounties", "Submit Work", "Verify Work", "Neural Identity"]
+)
+
+# -----------------------------
+# DASHBOARD
+# -----------------------------
+if page == "Dashboard":
+    st.title("COMMAND_CENTER")
+    st.metric("ACTIVE BOUNTIES", len(st.session_state.bounties))
+    st.metric("VERIFIED WORK", len([s for s in st.session_state.submissions if s["status"] == "VERIFIED"]))
+
+# -----------------------------
+# BOUNTIES
+# -----------------------------
+elif page == "Bounties":
+    st.title("BOUNTY_TERMINAL")
+
+    if role == "company":
+        st.subheader("POST BOUNTY")
+        with st.form("post"):
+            title = st.text_input("TASK")
+            reward = st.number_input("REWARD", min_value=50)
+            hours = st.selectbox("TIME", ["4–6h", "6–8h", "8–10h"])
+            skills = st.text_input("SKILLS (comma separated)")
+            if st.form_submit_button("DEPLOY"):
+                st.session_state.bounties.append({
+                    "id": str(uuid.uuid4())[:8],
+                    "title": title,
+                    "reward": reward,
+                    "hours": hours,
+                    "skills": skills,
+                    "company": user,
+                    "claimed_by": None
+                })
+
+    st.subheader("AVAILABLE BOUNTIES")
+    for b in st.session_state.bounties:
+        st.markdown(f"""
+        **{b['title']}**  
+        `{b['id']}` | {b['reward']} CR | {b['hours']}  
+        SKILLS: {b['skills']}  
+        COMPANY: {b['company']}
+        """)
+        if role == "student" and not b["claimed_by"]:
+            if st.button(f"CLAIM {b['id']}"):
+                b["claimed_by"] = user
+
+# -----------------------------
+# SUBMISSION
+# -----------------------------
+elif page == "Submit Work":
+    if role != "student":
+        st.warning("STUDENTS ONLY")
+        st.stop()
+
+    st.title("SUBMIT_DELIVERABLE")
+
+    claimed = [b for b in st.session_state.bounties if b["claimed_by"] == user]
+
+    if not claimed:
+        st.info("NO CLAIMED BOUNTIES")
+        st.stop()
+
+    bounty = st.selectbox("SELECT BOUNTY", claimed, format_func=lambda x: x["title"])
+
+    with st.form("submit"):
+        link = st.text_input("DELIVERABLE LINK (GitHub / Drive)")
+        process = st.text_area("PROCESS LOG (REQUIRED)")
+        if st.form_submit_button("TRANSMIT"):
+            if len(process) < 50:
+                st.error("PROCESS LOG TOO SHORT")
+            else:
+                st.session_state.submissions.append({
+                    "id": bounty["id"],
+                    "student": user,
+                    "company": bounty["company"],
+                    "link": link,
+                    "process": process,
+                    "status": "PENDING",
+                    "timestamp": datetime.utcnow()
+                })
+
+# -----------------------------
+# VERIFICATION
+# -----------------------------
+elif page == "Verify Work":
+    if role != "company":
+        st.warning("COMPANIES ONLY")
+        st.stop()
+
+    st.title("VALIDATION_QUEUE")
+
+    queue = [s for s in st.session_state.submissions if s["company"] == user]
+
+    for s in queue:
+        st.markdown(f"""
+        **TASK:** `{s['id']}`  
+        STUDENT: {s['student']}  
+        LINK: {s['link']}  
+        STATUS: {s['status']}
+        """)
+        with st.expander("PROCESS LOG"):
+            st.write(s["process"])
+
+        if s["status"] == "PENDING":
+            col1, col2 = st.columns(2)
+            if col1.button(f"VERIFY {s['id']}"):
+                s["status"] = "VERIFIED"
+            if col2.button(f"REJECT {s['id']}"):
+                s["status"] = "REJECTED"
+
+# -----------------------------
+# NEURAL IDENTITY
+# -----------------------------
+elif page == "Neural Identity":
+    st.title("NEURAL_IDENTITY")
+
+    ledger = [s for s in st.session_state.submissions if s["student"] == user and s["status"] == "VERIFIED"]
+
+    st.subheader("VERIFIED LEDGER")
+    if not ledger:
+        st.write("NO VERIFIED WORK")
+    else:
+        for l in ledger:
+            st.markdown(f"""
+            `{l['id']}` | VERIFIED  
+            COMPANY: {l['company']}  
+            """)
