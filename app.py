@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 import uuid
 from datetime import datetime
 
@@ -12,8 +11,10 @@ st.set_page_config(
     layout="wide"
 )
 
+st.title("VANTAGE // PROTOCOL")
+
 # -----------------------------
-# IN-MEMORY DATABASE (MVP)
+# IN-MEMORY DATABASE
 # -----------------------------
 if "users" not in st.session_state:
     st.session_state.users = {
@@ -31,38 +32,36 @@ if "current_user" not in st.session_state:
     st.session_state.current_user = None
 
 # -----------------------------
-# AUTH
-# -----------------------------
-def login():
-    st.sidebar.subheader("LOGIN")
-    user = st.sidebar.text_input("HANDLE")
-    if st.sidebar.button("CONNECT"):
-        if user in st.session_state.users:
-            st.session_state.current_user = user
-        else:
-            st.sidebar.error("USER NOT FOUND")
-
-def logout():
-    st.session_state.current_user = None
-
-# -----------------------------
-# NAV
+# LOGIN GATE (VISIBLE)
 # -----------------------------
 if not st.session_state.current_user:
-    login()
+    st.subheader("CONNECT TO VANTAGE")
+
+    user = st.selectbox("SELECT IDENTITY", list(st.session_state.users.keys()))
+    if st.button("CONNECT"):
+        st.session_state.current_user = user
+        st.rerun()
+
     st.stop()
 
+# -----------------------------
+# SESSION INFO
+# -----------------------------
 user = st.session_state.current_user
 role = st.session_state.users[user]["role"]
 
 st.sidebar.markdown(f"**USER:** `{user.upper()}`")
 st.sidebar.markdown(f"**ROLE:** `{role.upper()}`")
-if st.sidebar.button("DISCONNECT"):
-    logout()
-    st.stop()
 
+if st.sidebar.button("DISCONNECT"):
+    st.session_state.current_user = None
+    st.rerun()
+
+# -----------------------------
+# NAV
+# -----------------------------
 page = st.sidebar.radio(
-    "NAV",
+    "NAVIGATION",
     ["Dashboard", "Bounties", "Submit Work", "Verify Work", "Neural Identity"]
 )
 
@@ -70,22 +69,25 @@ page = st.sidebar.radio(
 # DASHBOARD
 # -----------------------------
 if page == "Dashboard":
-    st.title("COMMAND_CENTER")
+    st.header("COMMAND_CENTER")
     st.metric("ACTIVE BOUNTIES", len(st.session_state.bounties))
-    st.metric("VERIFIED WORK", len([s for s in st.session_state.submissions if s["status"] == "VERIFIED"]))
+    st.metric(
+        "VERIFIED PROOFS",
+        len([s for s in st.session_state.submissions if s["status"] == "VERIFIED"])
+    )
 
 # -----------------------------
 # BOUNTIES
 # -----------------------------
 elif page == "Bounties":
-    st.title("BOUNTY_TERMINAL")
+    st.header("BOUNTY_TERMINAL")
 
     if role == "company":
-        st.subheader("POST BOUNTY")
-        with st.form("post"):
-            title = st.text_input("TASK")
-            reward = st.number_input("REWARD", min_value=50)
-            hours = st.selectbox("TIME", ["4–6h", "6–8h", "8–10h"])
+        st.subheader("POST NEW BOUNTY")
+        with st.form("post_bounty"):
+            title = st.text_input("TASK NAME")
+            reward = st.number_input("REWARD (CR)", min_value=50)
+            hours = st.selectbox("TIME ESTIMATE", ["4–6h", "6–8h", "8–10h"])
             skills = st.text_input("SKILLS (comma separated)")
             if st.form_submit_button("DEPLOY"):
                 st.session_state.bounties.append({
@@ -97,28 +99,31 @@ elif page == "Bounties":
                     "company": user,
                     "claimed_by": None
                 })
+                st.success("BOUNTY DEPLOYED")
 
     st.subheader("AVAILABLE BOUNTIES")
     for b in st.session_state.bounties:
         st.markdown(f"""
-        **{b['title']}**  
-        `{b['id']}` | {b['reward']} CR | {b['hours']}  
-        SKILLS: {b['skills']}  
-        COMPANY: {b['company']}
-        """)
+**{b['title']}**  
+ID: `{b['id']}`  
+REWARD: {b['reward']} CR | TIME: {b['hours']}  
+SKILLS: {b['skills']}  
+COMPANY: {b['company']}
+""")
         if role == "student" and not b["claimed_by"]:
-            if st.button(f"CLAIM {b['id']}"):
+            if st.button(f"CLAIM {b['id']}", key=f"claim_{b['id']}"):
                 b["claimed_by"] = user
+                st.success("BOUNTY CLAIMED")
 
 # -----------------------------
-# SUBMISSION
+# SUBMIT WORK
 # -----------------------------
 elif page == "Submit Work":
     if role != "student":
-        st.warning("STUDENTS ONLY")
+        st.warning("STUDENT ACCESS ONLY")
         st.stop()
 
-    st.title("SUBMIT_DELIVERABLE")
+    st.header("SUBMIT_DELIVERABLE")
 
     claimed = [b for b in st.session_state.bounties if b["claimed_by"] == user]
 
@@ -128,12 +133,12 @@ elif page == "Submit Work":
 
     bounty = st.selectbox("SELECT BOUNTY", claimed, format_func=lambda x: x["title"])
 
-    with st.form("submit"):
+    with st.form("submit_work"):
         link = st.text_input("DELIVERABLE LINK (GitHub / Drive)")
-        process = st.text_area("PROCESS LOG (REQUIRED)")
+        process = st.text_area("PROCESS LOG (REQUIRED — describe steps)")
         if st.form_submit_button("TRANSMIT"):
             if len(process) < 50:
-                st.error("PROCESS LOG TOO SHORT")
+                st.error("PROCESS LOG TOO SHORT (MIN 50 CHARS)")
             else:
                 st.session_state.submissions.append({
                     "id": bounty["id"],
@@ -144,50 +149,60 @@ elif page == "Submit Work":
                     "status": "PENDING",
                     "timestamp": datetime.utcnow()
                 })
+                st.success("SUBMISSION SENT FOR VERIFICATION")
 
 # -----------------------------
-# VERIFICATION
+# VERIFY WORK
 # -----------------------------
 elif page == "Verify Work":
     if role != "company":
-        st.warning("COMPANIES ONLY")
+        st.warning("COMPANY ACCESS ONLY")
         st.stop()
 
-    st.title("VALIDATION_QUEUE")
+    st.header("VALIDATION_QUEUE")
 
     queue = [s for s in st.session_state.submissions if s["company"] == user]
 
+    if not queue:
+        st.info("NO SUBMISSIONS")
+        st.stop()
+
     for s in queue:
         st.markdown(f"""
-        **TASK:** `{s['id']}`  
-        STUDENT: {s['student']}  
-        LINK: {s['link']}  
-        STATUS: {s['status']}
-        """)
+**TASK ID:** `{s['id']}`  
+STUDENT: {s['student']}  
+LINK: {s['link']}  
+STATUS: {s['status']}
+""")
         with st.expander("PROCESS LOG"):
             st.write(s["process"])
 
         if s["status"] == "PENDING":
             col1, col2 = st.columns(2)
-            if col1.button(f"VERIFY {s['id']}"):
+            if col1.button(f"VERIFY {s['id']}", key=f"v_{s['id']}"):
                 s["status"] = "VERIFIED"
-            if col2.button(f"REJECT {s['id']}"):
+                st.success("VERIFIED")
+            if col2.button(f"REJECT {s['id']}", key=f"r_{s['id']}"):
                 s["status"] = "REJECTED"
+                st.error("REJECTED")
 
 # -----------------------------
 # NEURAL IDENTITY
 # -----------------------------
 elif page == "Neural Identity":
-    st.title("NEURAL_IDENTITY")
+    st.header("NEURAL_IDENTITY")
 
-    ledger = [s for s in st.session_state.submissions if s["student"] == user and s["status"] == "VERIFIED"]
+    ledger = [
+        s for s in st.session_state.submissions
+        if s["student"] == user and s["status"] == "VERIFIED"
+    ]
 
-    st.subheader("VERIFIED LEDGER")
     if not ledger:
-        st.write("NO VERIFIED WORK")
+        st.info("NO VERIFIED PROOFS YET")
     else:
         for l in ledger:
             st.markdown(f"""
-            `{l['id']}` | VERIFIED  
-            COMPANY: {l['company']}  
-            """)
+✅ **{l['id']}**  
+COMPANY: {l['company']}  
+TIMESTAMP: {l['timestamp']}
+""")
